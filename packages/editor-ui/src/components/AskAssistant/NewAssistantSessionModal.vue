@@ -7,19 +7,16 @@ import { useI18n } from '@/composables/useI18n';
 import { useUIStore } from '@/stores/ui.store';
 import type { ChatRequest } from '@/types/assistant.types';
 import { useAssistantStore } from '@/stores/assistant.store';
-import { useTelemetry } from '@/composables/useTelemetry';
-import { useWorkflowsStore } from '@/stores/workflows.store';
+import type { ICredentialType } from 'n8n-workflow';
 
 const i18n = useI18n();
 const uiStore = useUIStore();
 const assistantStore = useAssistantStore();
-const workflowsStore = useWorkflowsStore();
-const telemetry = useTelemetry();
 
 const props = defineProps<{
 	name: string;
 	data: {
-		context: ChatRequest.ErrorContext;
+		context: { errorHelp: ChatRequest.ErrorContext } | { credHelp: { credType: ICredentialType } };
 	};
 }>();
 
@@ -28,26 +25,29 @@ const close = () => {
 };
 
 const startNewSession = async () => {
-	await assistantStore.initErrorHelper(props.data.context);
-	telemetry.track(
-		'User opened assistant',
-		{
+	if ('errorHelp' in props.data.context) {
+		await assistantStore.initErrorHelper(props.data.context.errorHelp);
+		assistantStore.trackUserOpenedAssistant({
 			source: 'error',
 			task: 'error',
 			has_existing_session: true,
-			workflow_id: workflowsStore.workflowId,
-			node_type: props.data.context.node.type,
-			error: props.data.context.error,
-			chat_session_id: assistantStore.currentSessionId,
-		},
-		{ withPostHog: true },
-	);
+		});
+	} else if ('credHelp' in props.data.context) {
+		await assistantStore.initCredHelp(props.data.context.credHelp.credType);
+	}
 	close();
 };
 </script>
 
 <template>
-	<Modal width="460px" height="250px" :name="NEW_ASSISTANT_SESSION_MODAL" :center="true">
+	<Modal
+		width="460px"
+		height="250px"
+		data-test-id="new-assistant-session-modal"
+		:name="NEW_ASSISTANT_SESSION_MODAL"
+		:center="true"
+		:append-to-body="true"
+	>
 		<template #header>
 			{{ i18n.baseText('aiAssistant.newSessionModal.title.part1') }}
 			<span :class="$style.assistantIcon"><AssistantIcon size="medium" /></span>

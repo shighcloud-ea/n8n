@@ -1,17 +1,18 @@
 <script setup lang="ts">
 import parseDiff from 'parse-diff';
 import { computed } from 'vue';
+
 import { useI18n } from 'n8n-design-system/composables/useI18n';
 
 const MIN_LINES = 4;
 
 interface Props {
-	title: string;
-	content: string;
-	replacing: boolean;
-	replaced: boolean;
-	error: boolean;
-	streaming: boolean;
+	title?: string;
+	content?: string;
+	replacing?: boolean;
+	replaced?: boolean;
+	error?: boolean;
+	streaming?: boolean;
 }
 
 type Line =
@@ -82,7 +83,7 @@ const diffs = computed(() => {
 </script>
 
 <template>
-	<div :class="$style.container">
+	<div :class="$style.container" data-test-id="code-diff-suggestion">
 		<div :class="$style.title">
 			{{ title }}
 		</div>
@@ -109,17 +110,26 @@ const diffs = computed(() => {
 				<span :class="$style.infoText">{{ t('codeDiff.couldNotReplace') }}</span>
 			</div>
 			<div v-else-if="replaced">
-				<n8n-button type="secondary" size="mini" icon="undo" @click="() => emit('undo')">{{
-					t('codeDiff.undo')
-				}}</n8n-button>
+				<n8n-button
+					type="secondary"
+					size="mini"
+					icon="undo"
+					data-test-id="undo-replace-button"
+					@click="() => emit('undo')"
+				>
+					{{ t('codeDiff.undo') }}
+				</n8n-button>
 				<n8n-icon icon="check" color="success" class="ml-xs" />
-				<span :class="$style.infoText">{{ t('codeDiff.codeReplaced') }}</span>
+				<span :class="$style.infoText" data-test-id="code-replaced-message">
+					{{ t('codeDiff.codeReplaced') }}
+				</span>
 			</div>
 			<n8n-button
 				v-else
 				:type="replacing ? 'secondary' : 'primary'"
 				size="mini"
 				icon="refresh"
+				data-test-id="replace-code-button"
 				:disabled="!content || streaming"
 				:loading="replacing"
 				@click="() => emit('replace')"

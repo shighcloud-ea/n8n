@@ -50,7 +50,7 @@ export const paymentFields: INodeProperties[] = [
 		name: 'invoice',
 		type: 'options',
 		description:
-			'Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code-examples/expressions/">expression</a>',
+			'Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>',
 		typeOptions: {
 			loadOptionsMethod: 'getInvoices',
 		},
@@ -85,6 +85,7 @@ export const paymentFields: INodeProperties[] = [
 		default: {},
 		displayOptions: {
 			show: {
+				apiVersion: ['v4'],
 				operation: ['create'],
 				resource: ['payment'],
 			},
@@ -94,11 +95,6 @@ export const paymentFields: INodeProperties[] = [
 				displayName: 'Payment Type',
 				name: 'paymentType',
 				type: 'options',
-				displayOptions: {
-					show: {
-						apiVersion: ['v4'],
-					},
-				},
 				options: [
 					{
 						name: 'ACH',
@@ -232,14 +228,37 @@ export const paymentFields: INodeProperties[] = [
 				default: 1,
 			},
 			{
+				displayName: 'Transfer Reference',
+				name: 'transferReference',
+				type: 'string',
+				default: '',
+			},
+			{
+				displayName: 'Private Notes',
+				name: 'privateNotes',
+				type: 'string',
+				default: '',
+			},
+		],
+	},
+	{
+		displayName: 'Additional Fields',
+		name: 'additionalFields',
+		type: 'collection',
+		placeholder: 'Add Field',
+		default: {},
+		displayOptions: {
+			show: {
+				apiVersion: ['v5'],
+				operation: ['create'],
+				resource: ['payment'],
+			},
+		},
+		options: [
+			{
 				displayName: 'Payment Type',
 				name: 'paymentType',
 				type: 'options',
-				displayOptions: {
-					show: {
-						apiVersion: ['v5'],
-					},
-				},
 				options: [
 					{
 						name: 'Bank Transfer',
@@ -564,6 +583,44 @@ export const paymentFields: INodeProperties[] = [
 					},
 				],
 				default: 'client',
+			},
+			{
+				displayName: 'Status',
+				name: 'status',
+				type: 'options',
+				options: [
+					{
+						name: 'Active',
+						value: 'active',
+					},
+					{
+						name: 'Archived',
+						value: 'archived',
+					},
+					{
+						name: 'Deleted',
+						value: 'deleted',
+					},
+				],
+				default: 'active',
+			},
+			{
+				displayName: 'Created At',
+				name: 'createdAt',
+				type: 'dateTime',
+				default: '',
+			},
+			{
+				displayName: 'Updated At',
+				name: 'updatedAt',
+				type: 'dateTime',
+				default: '',
+			},
+			{
+				displayName: 'Is Deleted',
+				name: 'isDeleted',
+				type: 'boolean',
+				default: false,
 			},
 		],
 	},

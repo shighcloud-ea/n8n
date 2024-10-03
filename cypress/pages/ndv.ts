@@ -1,5 +1,5 @@
-import { getVisiblePopper, getVisibleSelect } from '../utils';
 import { BasePage } from './base';
+import { getVisiblePopper, getVisibleSelect } from '../utils';
 
 export class NDV extends BasePage {
 	getters = {
@@ -138,6 +138,8 @@ export class NDV extends BasePage {
 			cy.getByTestId(`fixed-collection-${paramName}`),
 		schemaViewNode: () => cy.getByTestId('run-data-schema-node'),
 		schemaViewNodeName: () => cy.getByTestId('run-data-schema-node-name'),
+		expressionExpanders: () => cy.getByTestId('expander'),
+		expressionModalOutput: () => cy.getByTestId('expression-modal-output'),
 	};
 
 	actions = {
