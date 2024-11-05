@@ -71,6 +71,7 @@ export const SETUP_CREDENTIALS_MODAL_KEY = 'setupCredentials';
 export const PROJECT_MOVE_RESOURCE_MODAL = 'projectMoveResourceModal';
 export const NEW_ASSISTANT_SESSION_MODAL = 'newAssistantSession';
 export const EXTERNAL_SECRETS_PROVIDER_MODAL_KEY = 'externalSecretsProvider';
+export const COMMUNITY_PLUS_ENROLLMENT_MODAL = 'communityPlusEnrollment';
 
 export const COMMUNITY_PACKAGE_MANAGE_ACTIONS = {
 	UNINSTALL: 'uninstall',
@@ -194,6 +195,7 @@ export const CHAIN_SUMMARIZATION_LANGCHAIN_NODE_TYPE =
 export const SIMULATE_NODE_TYPE = 'n8n-nodes-base.simulate';
 export const SIMULATE_TRIGGER_NODE_TYPE = 'n8n-nodes-base.simulateTrigger';
 export const AI_TRANSFORM_NODE_TYPE = 'n8n-nodes-base.aiTransform';
+export const FORM_NODE_TYPE = 'n8n-nodes-base.form';
 
 export const CREDENTIAL_ONLY_NODE_PREFIX = 'n8n-creds-base';
 export const CREDENTIAL_ONLY_HTTP_NODE_VERSION = 4.1;
@@ -477,7 +479,6 @@ export const enum VIEWS {
 	PERSONAL_SETTINGS = 'PersonalSettings',
 	API_SETTINGS = 'APISettings',
 	NOT_FOUND = 'NotFoundView',
-	FAKE_DOOR = 'ComingSoon',
 	COMMUNITY_NODES = 'CommunityNodes',
 	WORKFLOWS = 'WorkflowsView',
 	WORKFLOW_EXECUTIONS = 'WorkflowExecutions',
@@ -497,12 +498,6 @@ export const enum VIEWS {
 }
 
 export const EDITABLE_CANVAS_VIEWS = [VIEWS.WORKFLOW, VIEWS.NEW_WORKFLOW, VIEWS.EXECUTION_DEBUG];
-
-export const enum FAKE_DOOR_FEATURES {
-	ENVIRONMENTS = 'environments',
-	LOGGING = 'logging',
-	SSO = 'sso',
-}
 
 export const TEST_PIN_DATA = [
 	{
@@ -667,13 +662,6 @@ export const KEEP_AUTH_IN_NDV_FOR_NODES = [
 export const MAIN_AUTH_FIELD_NAME = 'authentication';
 export const NODE_RESOURCE_FIELD_NAME = 'resource';
 
-export const ASK_AI_EXPERIMENT = {
-	name: '011_ask_AI',
-	control: 'control',
-	gpt3: 'gpt3',
-	gpt4: 'gpt4',
-};
-
 export const TEMPLATE_CREDENTIAL_SETUP_EXPERIMENT = '017_template_credential_setup_v2';
 
 export const CANVAS_AUTO_ADD_MANUAL_TRIGGER_EXPERIMENT = {
@@ -700,7 +688,6 @@ export const CREDENTIAL_DOCS_EXPERIMENT = {
 	variant: 'variant',
 };
 export const EXPERIMENTS_TO_TRACK = [
-	ASK_AI_EXPERIMENT.name,
 	TEMPLATE_CREDENTIAL_SETUP_EXPERIMENT,
 	CANVAS_AUTO_ADD_MANUAL_TRIGGER_EXPERIMENT.name,
 	AI_ASSISTANT_EXPERIMENT.name,
@@ -721,7 +708,11 @@ export const MFA_AUTHENTICATION_TOKEN_INPUT_MAX_LENGTH = 6;
 
 export const MFA_AUTHENTICATION_RECOVERY_CODE_INPUT_MAX_LENGTH = 36;
 
-export const NODE_TYPES_EXCLUDED_FROM_OUTPUT_NAME_APPEND = [FILTER_NODE_TYPE, SWITCH_NODE_TYPE];
+export const NODE_TYPES_EXCLUDED_FROM_OUTPUT_NAME_APPEND = [
+	FILTER_NODE_TYPE,
+	SWITCH_NODE_TYPE,
+	REMOVE_DUPLICATES_NODE_TYPE,
+];
 
 type ClearOutgoingConnectonsEvents = {
 	[nodeName: string]: {

@@ -1,7 +1,14 @@
-import type { ExecutionStatus, IDataObject, INode, IPinData, IRunData } from 'n8n-workflow';
+import {
+	SEND_AND_WAIT_OPERATION,
+	type ExecutionStatus,
+	type IDataObject,
+	type INode,
+	type IPinData,
+	type IRunData,
+} from 'n8n-workflow';
 import type { ExecutionFilterType, ExecutionsQueryFilter } from '@/Interface';
 import { isEmpty } from '@/utils/typesUtils';
-import { FORM_TRIGGER_NODE_TYPE } from '../constants';
+import { FORM_NODE_TYPE, FORM_TRIGGER_NODE_TYPE } from '../constants';
 import { useWorkflowsStore } from '@/stores/workflows.store';
 import { useRootStore } from '@/stores/root.store';
 import { i18n } from '@/plugins/i18n';
@@ -159,6 +166,16 @@ export const waitingNodeTooltip = () => {
 			if (message && resumeUrl) {
 				return `${message}<a href="${resumeUrl}" target="_blank">${resumeUrl}</a>`;
 			}
+		}
+
+		if (lastNode?.type === FORM_NODE_TYPE) {
+			const message = i18n.baseText('ndv.output.waitNodeWaitingForFormSubmission');
+			const resumeUrl = `${useRootStore().formWaitingUrl}/${useWorkflowsStore().activeExecutionId}`;
+			return `${message}<a href="${resumeUrl}" target="_blank">${resumeUrl}</a>`;
+		}
+
+		if (lastNode?.parameters.operation === SEND_AND_WAIT_OPERATION) {
+			return i18n.baseText('ndv.output.sendAndWaitWaitingApproval');
 		}
 	} catch (error) {
 		// do not throw error if could not compose tooltip

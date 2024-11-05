@@ -3,6 +3,7 @@ import Bowser from 'bowser';
 import type { IUserManagementSettings, FrontendSettings } from '@n8n/api-types';
 
 import * as publicApiApi from '@/api/api-keys';
+import * as eventsApi from '@/api/events';
 import * as ldapApi from '@/api/ldap';
 import * as settingsApi from '@/api/settings';
 import { testHealthEndpoint } from '@/api/templates';
@@ -87,6 +88,8 @@ export const useSettingsStore = defineStore(STORES.SETTINGS, () => {
 
 	const isAiAssistantEnabled = computed(() => settings.value.aiAssistant?.enabled);
 
+	const isAskAiEnabled = computed(() => settings.value.askAi?.enabled);
+
 	const showSetupPage = computed(() => userManagement.value.showSetupOnFirstLoad);
 
 	const deploymentType = computed(() => settings.value.deployment?.type || 'default');
@@ -144,7 +147,7 @@ export const useSettingsStore = defineStore(STORES.SETTINGS, () => {
 	const permanentlyDismissedBanners = computed(() => settings.value.banners?.dismissed ?? []);
 
 	const isBelowUserQuota = computed(
-		() =>
+		(): boolean =>
 			userManagement.value.quota === -1 ||
 			userManagement.value.quota > useUsersStore().allUsers.length,
 	);
@@ -152,6 +155,10 @@ export const useSettingsStore = defineStore(STORES.SETTINGS, () => {
 	const isCommunityPlan = computed(() => planName.value.toLowerCase() === 'community');
 
 	const isDevRelease = computed(() => settings.value.releaseChannel === 'dev');
+
+	const isCanvasV2Enabled = computed(() =>
+		(settings.value.betaFeatures ?? []).includes('canvas_v2'),
+	);
 
 	const setSettings = (newSettings: FrontendSettings) => {
 		settings.value = newSettings;
@@ -245,6 +252,10 @@ export const useSettingsStore = defineStore(STORES.SETTINGS, () => {
 		rootStore.setDefaultLocale(fetchedSettings.defaultLocale);
 		rootStore.setBinaryDataMode(fetchedSettings.binaryDataMode);
 		useVersionsStore().setVersionNotificationSettings(fetchedSettings.versionNotifications);
+
+		if (fetchedSettings.telemetry.enabled) {
+			void eventsApi.sessionStarted(rootStore.restApiContext);
+		}
 	};
 
 	const initialize = async () => {
@@ -410,6 +421,8 @@ export const useSettingsStore = defineStore(STORES.SETTINGS, () => {
 		saveManualExecutions,
 		saveDataProgressExecution,
 		isCommunityPlan,
+		isAskAiEnabled,
+		isCanvasV2Enabled,
 		reset,
 		testLdapConnection,
 		getLdapConfig,

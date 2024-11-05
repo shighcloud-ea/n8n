@@ -1,4 +1,4 @@
-import { chatWithAssistant, replaceCode } from '@/api/assistant';
+import { chatWithAssistant, replaceCode } from '@/api/ai';
 import {
 	VIEWS,
 	EDITABLE_CANVAS_VIEWS,
@@ -83,6 +83,9 @@ export const useAssistantStore = defineStore(STORES.ASSISTANT, () => {
 	// We use streaming for assistants that support it, and this for agents
 	const assistantThinkingMessage = ref<string | undefined>();
 	const chatSessionTask = ref<'error' | 'support' | 'credentials' | undefined>();
+	// Indicate if last sent workflow and execution data is stale
+	const workflowDataStale = ref<boolean>(true);
+	const workflowExecutionDataStale = ref<boolean>(true);
 
 	const isExperimentEnabled = computed(
 		() => getVariant(AI_ASSISTANT_EXPERIMENT.name) === AI_ASSISTANT_EXPERIMENT.variant,
@@ -123,18 +126,6 @@ export const useAssistantStore = defineStore(STORES.ASSISTANT, () => {
 				(msg) => READABLE_TYPES.includes(msg.type) && msg.role === 'assistant' && !msg.read,
 			).length,
 	);
-
-	watch(route, () => {
-		const activeWorkflowId = workflowsStore.workflowId;
-		if (
-			!currentSessionId.value ||
-			currentSessionWorkflowId.value === PLACEHOLDER_EMPTY_WORKFLOW_ID ||
-			currentSessionWorkflowId.value === activeWorkflowId
-		) {
-			return;
-		}
-		resetAssistantChat();
-	});
 
 	function resetAssistantChat() {
 		clearMessages();
@@ -260,13 +251,14 @@ export const useAssistantStore = defineStore(STORES.ASSISTANT, () => {
 		streaming.value = false;
 	}
 
-	function addAssistantError(content: string, id: string) {
+	function addAssistantError(content: string, id: string, retry?: () => Promise<void>) {
 		chatMessages.value.push({
 			id,
 			role: 'assistant',
 			type: 'error',
 			content,
 			read: true,
+			retry,
 		});
 	}
 
@@ -284,11 +276,15 @@ export const useAssistantStore = defineStore(STORES.ASSISTANT, () => {
 		});
 	}
 
-	function handleServiceError(e: unknown, id: string) {
+	function handleServiceError(e: unknown, id: string, retry?: () => Promise<void>) {
 		assert(e instanceof Error);
 		stopStreaming();
 		assistantThinkingMessage.value = undefined;
-		addAssistantError(`${locale.baseText('aiAssistant.serviceError.message')}: (${e.message})`, id);
+		addAssistantError(
+			`${locale.baseText('aiAssistant.serviceError.message')}: (${e.message})`,
+			id,
+			retry,
+		);
 	}
 
 	function onEachStreamingMessage(response: ChatRequest.ResponsePayload, id: string) {
@@ -305,11 +301,7 @@ export const useAssistantStore = defineStore(STORES.ASSISTANT, () => {
 				{ withPostHog: true },
 			);
 			// Track first user message in support chat now that we have a session id
-			if (
-				usersMessages.value.length === 1 &&
-				!currentSessionId.value &&
-				chatSessionTask.value === 'support'
-			) {
+			if (usersMessages.value.length === 1 && chatSessionTask.value === 'support') {
 				const firstUserMessage = usersMessages.value[0] as ChatUI.TextMessage;
 				trackUserMessage(firstUserMessage.content, false);
 			}
@@ -325,6 +317,8 @@ export const useAssistantStore = defineStore(STORES.ASSISTANT, () => {
 
 	function onDoneStreaming(id: string) {
 		stopStreaming();
+		workflowDataStale.value = false;
+		workflowExecutionDataStale.value = false;
 		lastUnread.value = chatMessages.value.find(
 			(msg) =>
 				msg.id === id && !msg.read && msg.role === 'assistant' && READABLE_TYPES.includes(msg.type),
@@ -353,14 +347,16 @@ export const useAssistantStore = defineStore(STORES.ASSISTANT, () => {
 	/**
 	 * Gets information about the current view and active node to provide context to the assistant
 	 */
-	function getVisualContext(nodeInfo?: ChatRequest.NodeInfo): ChatRequest.UserContext | undefined {
+	function getVisualContext(
+		nodeInfo?: ChatRequest.NodeInfo,
+	): ChatRequest.AssistantContext | undefined {
 		if (chatSessionTask.value === 'error') {
 			return undefined;
 		}
 		const currentView = route.name as VIEWS;
 		const activeNode = workflowsStore.activeNode();
 		const activeNodeForLLM = activeNode
-			? assistantHelpers.processNodeForAssistant(activeNode, ['position'])
+			? assistantHelpers.processNodeForAssistant(activeNode, ['position', 'parameters.notice'])
 			: null;
 		const activeModals = uiStore.activeModals;
 		const isCredentialModalActive = activeModals.includes(CREDENTIAL_EDIT_MODAL_KEY);
@@ -401,6 +397,11 @@ export const useAssistantStore = defineStore(STORES.ASSISTANT, () => {
 						authType: nodeInfo?.authType?.name,
 					}
 				: undefined,
+			currentWorkflow: workflowDataStale.value ? workflowsStore.workflow : undefined,
+			executionData:
+				workflowExecutionDataStale.value && executionResult
+					? assistantHelpers.simplifyResultData(executionResult)
+					: undefined,
 		};
 	}
 
@@ -451,7 +452,8 @@ export const useAssistantStore = defineStore(STORES.ASSISTANT, () => {
 			},
 			(msg) => onEachStreamingMessage(msg, id),
 			() => onDoneStreaming(id),
-			(e) => handleServiceError(e, id),
+			(e) =>
+				handleServiceError(e, id, async () => await initSupportChat(userMessage, credentialType)),
 		);
 	}
 
@@ -491,7 +493,10 @@ export const useAssistantStore = defineStore(STORES.ASSISTANT, () => {
 						firstName: usersStore.currentUser?.firstName ?? '',
 					},
 					error: context.error,
-					node: assistantHelpers.processNodeForAssistant(context.node, ['position']),
+					node: assistantHelpers.processNodeForAssistant(context.node, [
+						'position',
+						'parameters.notice',
+					]),
 					nodeInputData,
 					executionSchema: schemas,
 					authType,
@@ -499,7 +504,7 @@ export const useAssistantStore = defineStore(STORES.ASSISTANT, () => {
 			},
 			(msg) => onEachStreamingMessage(msg, id),
 			() => onDoneStreaming(id),
-			(e) => handleServiceError(e, id),
+			(e) => handleServiceError(e, id, async () => await initErrorHelper(context)),
 		);
 	}
 
@@ -528,7 +533,7 @@ export const useAssistantStore = defineStore(STORES.ASSISTANT, () => {
 			},
 			(msg) => onEachStreamingMessage(msg, id),
 			() => onDoneStreaming(id),
-			(e) => handleServiceError(e, id),
+			(e) => handleServiceError(e, id, async () => await sendEvent(eventName, error)),
 		);
 	}
 	async function onNodeExecution(pushEvent: PushPayload<'nodeExecuteAfter'>) {
@@ -565,6 +570,12 @@ export const useAssistantStore = defineStore(STORES.ASSISTANT, () => {
 		}
 
 		const id = getRandomId();
+
+		const retry = async () => {
+			chatMessages.value = chatMessages.value.filter((msg) => msg.id !== id);
+			await sendMessage(chatMessage);
+		};
+
 		try {
 			addUserMessage(chatMessage.text, id);
 			addLoadingAssistantMessage(locale.baseText('aiAssistant.thinkingSteps.thinking'));
@@ -577,7 +588,10 @@ export const useAssistantStore = defineStore(STORES.ASSISTANT, () => {
 			) {
 				nodeExecutionStatus.value = 'not_executed';
 			}
-			const userContext = getVisualContext();
+			const activeNode = workflowsStore.activeNode() as INode;
+			const nodeInfo = assistantHelpers.getNodeInfoForAssistant(activeNode);
+			const userContext = getVisualContext(nodeInfo);
+
 			chatWithAssistant(
 				rootStore.restApiContext,
 				{
@@ -592,12 +606,12 @@ export const useAssistantStore = defineStore(STORES.ASSISTANT, () => {
 				},
 				(msg) => onEachStreamingMessage(msg, id),
 				() => onDoneStreaming(id),
-				(e) => handleServiceError(e, id),
+				(e) => handleServiceError(e, id, retry),
 			);
 			trackUserMessage(chatMessage.text, !!chatMessage.quickReplyType);
 		} catch (e: unknown) {
 			// in case of assert
-			handleServiceError(e, id);
+			handleServiceError(e, id, retry);
 		}
 	}
 
@@ -764,6 +778,33 @@ export const useAssistantStore = defineStore(STORES.ASSISTANT, () => {
 		}
 	}
 
+	watch(route, () => {
+		const activeWorkflowId = workflowsStore.workflowId;
+		if (
+			!currentSessionId.value ||
+			currentSessionWorkflowId.value === PLACEHOLDER_EMPTY_WORKFLOW_ID ||
+			currentSessionWorkflowId.value === activeWorkflowId
+		) {
+			return;
+		}
+		resetAssistantChat();
+	});
+
+	watch(
+		() => uiStore.stateIsDirty,
+		() => {
+			workflowDataStale.value = true;
+		},
+	);
+
+	watch(
+		() => workflowsStore.workflowExecutionData?.data?.resultData ?? {},
+		() => {
+			workflowExecutionDataStale.value = true;
+		},
+		{ deep: true, immediate: true },
+	);
+
 	return {
 		isAssistantEnabled,
 		canShowAssistantButtonsOnCanvas,
@@ -795,5 +836,6 @@ export const useAssistantStore = defineStore(STORES.ASSISTANT, () => {
 		chatSessionTask,
 		initCredHelp,
 		isCredTypeActive,
+		handleServiceError,
 	};
 });

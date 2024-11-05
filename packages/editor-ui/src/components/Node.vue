@@ -2,6 +2,7 @@
 import { useStorage } from '@/composables/useStorage';
 import {
 	CUSTOM_API_CALL_KEY,
+	FORM_NODE_TYPE,
 	LOCAL_STORAGE_PIN_DATA_DISCOVERY_CANVAS_FLAG,
 	MANUAL_TRIGGER_NODE_TYPE,
 	NODE_INSERT_SPACER_BETWEEN_INPUT_GROUPS,
@@ -17,7 +18,7 @@ import type {
 	NodeOperationError,
 	Workflow,
 } from 'n8n-workflow';
-import { NodeConnectionType, NodeHelpers } from 'n8n-workflow';
+import { NodeConnectionType, NodeHelpers, SEND_AND_WAIT_OPERATION } from 'n8n-workflow';
 import type { StyleValue } from 'vue';
 import { computed, onMounted, ref, watch } from 'vue';
 import xss from 'xss';
@@ -157,8 +158,9 @@ const getTriggerNodeTooltip = computed(() => {
 });
 
 const isPollingTypeNode = computed(() => !!nodeType.value?.polling);
+
 const isExecuting = computed(() => {
-	if (!node.value) return false;
+	if (!node.value || !workflowRunning.value) return false;
 	return workflowsStore.isNodeExecuting(node.value.name);
 });
 
@@ -269,7 +271,7 @@ const nodeClass = computed(() => {
 const nodeExecutionStatus = computed(() => {
 	const nodeExecutionRunData = workflowsStore.getWorkflowRunData?.[props.name];
 	if (nodeExecutionRunData) {
-		return nodeExecutionRunData.filter(Boolean)[0]?.executionStatus ?? '';
+		return nodeExecutionRunData.filter(Boolean)?.[0]?.executionStatus ?? '';
 	}
 	return '';
 });
@@ -335,6 +337,12 @@ const waiting = computed(() => {
 						? i18n.baseText('node.theNodeIsWaitingWebhookCall')
 						: i18n.baseText('node.theNodeIsWaitingFormCall');
 				return event;
+			}
+			if (node?.parameters.operation === SEND_AND_WAIT_OPERATION) {
+				return i18n.baseText('node.theNodeIsWaitingUserInput');
+			}
+			if (node?.type === FORM_NODE_TYPE) {
+				return i18n.baseText('node.theNodeIsWaitingFormCall');
 			}
 			const waitDate = new Date(workflowExecution.waitTill);
 			if (waitDate.toISOString() === WAIT_TIME_UNLIMITED) {
@@ -520,7 +528,8 @@ function showPinDataDiscoveryTooltip(dataItemsCount: number): void {
 		isManualTypeNode.value ||
 		isScheduledGroup.value ||
 		uiStore.isAnyModalOpen ||
-		dataItemsCount === 0
+		dataItemsCount === 0 ||
+		pinnedData.hasData.value
 	)
 		return;
 

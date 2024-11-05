@@ -259,25 +259,36 @@ onBeforeUnmount(() => {
 	<div
 		:class="[$style.canvasNode, { [$style.showToolbar]: showToolbar }]"
 		data-test-id="canvas-node"
+		:data-node-type="data.type"
 	>
-		<template v-for="source in mappedOutputs" :key="source.handleId">
+		<template
+			v-for="source in mappedOutputs"
+			:key="`${source.handleId}(${source.index + 1}/${mappedOutputs.length})`"
+		>
 			<CanvasHandleRenderer
 				v-bind="source"
 				:mode="CanvasConnectionMode.Output"
 				:is-read-only="readOnly"
 				:is-valid-connection="isValidConnection"
+				:data-node-name="label"
 				data-test-id="canvas-node-output-handle"
+				:data-handle-index="source.index"
 				@add="onAdd"
 			/>
 		</template>
 
-		<template v-for="target in mappedInputs" :key="target.handleId">
+		<template
+			v-for="target in mappedInputs"
+			:key="`${target.handleId}(${target.index + 1}/${mappedInputs.length})`"
+		>
 			<CanvasHandleRenderer
 				v-bind="target"
 				:mode="CanvasConnectionMode.Input"
 				:is-read-only="readOnly"
 				:is-valid-connection="isValidConnection"
 				data-test-id="canvas-node-input-handle"
+				:data-handle-index="target.index"
+				:data-node-name="label"
 				@add="onAdd"
 			/>
 		</template>

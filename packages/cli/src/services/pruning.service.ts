@@ -1,8 +1,8 @@
+import { GlobalConfig } from '@n8n/config';
 import { BinaryDataService, InstanceSettings } from 'n8n-core';
 import { jsonStringify } from 'n8n-workflow';
 import { Service } from 'typedi';
 
-import config from '@/config';
 import { inTest, TIME } from '@/constants';
 import { ExecutionRepository } from '@/databases/repositories/execution.repository';
 import { OnShutdown } from '@/decorators/on-shutdown';
@@ -15,8 +15,8 @@ export class PruningService {
 	private hardDeletionBatchSize = 100;
 
 	private rates: Record<string, number> = {
-		softDeletion: config.getEnv('executions.pruneDataIntervals.softDelete') * TIME.MINUTE,
-		hardDeletion: config.getEnv('executions.pruneDataIntervals.hardDelete') * TIME.MINUTE,
+		softDeletion: this.globalConfig.pruning.softDeleteInterval * TIME.MINUTE,
+		hardDeletion: this.globalConfig.pruning.hardDeleteInterval * TIME.MINUTE,
 	};
 
 	public softDeletionInterval: NodeJS.Timer | undefined;
@@ -31,13 +31,15 @@ export class PruningService {
 		private readonly executionRepository: ExecutionRepository,
 		private readonly binaryDataService: BinaryDataService,
 		private readonly orchestrationService: OrchestrationService,
+		private readonly globalConfig: GlobalConfig,
 	) {}
 
 	/**
 	 * @important Requires `OrchestrationService` to be initialized.
 	 */
 	init() {
-		const { isLeader, isMultiMainSetupEnabled } = this.orchestrationService;
+		const { isLeader } = this.instanceSettings;
+		const { isMultiMainSetupEnabled } = this.orchestrationService;
 
 		if (isLeader) this.startPruning();
 
@@ -49,11 +51,11 @@ export class PruningService {
 
 	private isPruningEnabled() {
 		const { instanceType, isFollower } = this.instanceSettings;
-		if (!config.getEnv('executions.pruneData') || inTest || instanceType !== 'main') {
+		if (!this.globalConfig.pruning.isEnabled || inTest || instanceType !== 'main') {
 			return false;
 		}
 
-		if (config.getEnv('multiMainSetup.enabled') && instanceType === 'main' && isFollower) {
+		if (this.globalConfig.multiMainSetup.enabled && instanceType === 'main' && isFollower) {
 			return false;
 		}
 

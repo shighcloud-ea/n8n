@@ -111,7 +111,7 @@ export const defaultSettings: FrontendSettings = {
 	mfa: {
 		enabled: false,
 	},
-	ai: {
+	askAi: {
 		enabled: false,
 	},
 	workflowHistory: {
@@ -124,4 +124,5 @@ export const defaultSettings: FrontendSettings = {
 	aiAssistant: {
 		enabled: false,
 	},
+	betaFeatures: [],
 };
