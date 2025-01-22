@@ -1,25 +1,23 @@
 <script lang="ts" setup>
 import { computed, nextTick, ref, onMounted, watch } from 'vue';
 
-import { type ProjectSharingData, ProjectTypes } from '@/types/projects.types';
+import { type ProjectSharingData } from '@/types/projects.types';
 import PageViewLayout from '@/components/layouts/PageViewLayout.vue';
 import PageViewLayoutList from '@/components/layouts/PageViewLayoutList.vue';
 import ResourceFiltersDropdown from '@/components/forms/ResourceFiltersDropdown.vue';
-import ResourceListHeader from '@/components/layouts/ResourceListHeader.vue';
 import { useUsersStore } from '@/stores/users.store';
 import type { DatatableColumn } from 'n8n-design-system';
 import { useI18n } from '@/composables/useI18n';
 import { useDebounce } from '@/composables/useDebounce';
 import { useTelemetry } from '@/composables/useTelemetry';
 import { useRoute } from 'vue-router';
-import { useProjectsStore } from '@/stores/projects.store';
 
 import type { BaseTextKey } from '@/plugins/i18n';
 import type { Scope } from '@n8n/permissions';
 
 export type IResource = {
 	id: string;
-	name: string;
+	name?: string;
 	value?: string;
 	key?: string;
 	updatedAt?: string;
@@ -44,7 +42,7 @@ const props = withDefaults(
 		displayName?: (resource: IResource) => string;
 		resources: IResource[];
 		disabled: boolean;
-		initialize: () => Promise<void>;
+		initialize?: () => Promise<void>;
 		filters?: IFilters;
 		additionalFiltersHandler?: (
 			resource: IResource,
@@ -60,7 +58,7 @@ const props = withDefaults(
 		loading: boolean;
 	}>(),
 	{
-		displayName: (resource: IResource) => resource.name,
+		displayName: (resource: IResource) => resource.name || '',
 		initialize: async () => {},
 		filters: () => ({ search: '', homeProject: '' }),
 		sortFns: () => ({}),
@@ -85,7 +83,7 @@ defineSlots<{
 	empty(): unknown;
 	preamble(): unknown;
 	postamble(): unknown;
-	'add-button'(props: { disabled: boolean }): unknown;
+	'add-button'(): unknown;
 	callout(): unknown;
 	filters(props: {
 		filters: Record<string, boolean | string | string[]>;
@@ -99,14 +97,13 @@ const route = useRoute();
 const i18n = useI18n();
 const { callDebounced } = useDebounce();
 const usersStore = useUsersStore();
-const projectsStore = useProjectsStore();
 const telemetry = useTelemetry();
 
 const sortBy = ref(props.sortOptions[0]);
 const hasFilters = ref(false);
 const filtersModel = ref(props.filters);
 const currentPage = ref(1);
-const rowsPerPage = ref<number>(10);
+const rowsPerPage = ref<number>(25);
 const resettingFilters = ref(false);
 const search = ref<HTMLElement | null>(null);
 
@@ -171,13 +168,19 @@ const focusSearchInput = () => {
 };
 
 const hasAppliedFilters = (): boolean => {
-	return !!filterKeys.value.find(
-		(key) =>
-			key !== 'search' &&
-			(Array.isArray(props.filters[key])
-				? props.filters[key].length > 0
-				: props.filters[key] !== ''),
-	);
+	return !!filterKeys.value.find((key) => {
+		if (key === 'search') return false;
+
+		if (typeof props.filters[key] === 'boolean') {
+			return props.filters[key];
+		}
+
+		if (Array.isArray(props.filters[key])) {
+			return props.filters[key].length > 0;
+		}
+
+		return props.filters[key] !== '';
+	});
 };
 
 const setRowsPerPage = (numberOfRowsPerPage: number) => {
@@ -330,36 +333,11 @@ onMounted(async () => {
 		hasFilters.value = true;
 	}
 });
-
-const headerIcon = computed(() => {
-	if (projectsStore.currentProject?.type === ProjectTypes.Personal) {
-		return 'user';
-	} else if (projectsStore.currentProject?.name) {
-		return 'layer-group';
-	} else {
-		return 'home';
-	}
-});
-
-const projectName = computed(() => {
-	if (!projectsStore.currentProject) {
-		return i18n.baseText('projects.menu.home');
-	} else if (projectsStore.currentProject.type === ProjectTypes.Personal) {
-		return i18n.baseText('projects.menu.personal');
-	} else {
-		return projectsStore.currentProject.name;
-	}
-});
 </script>
 
 <template>
 	<PageViewLayout>
 		<template #header>
-			<ResourceListHeader :icon="headerIcon" data-test-id="list-layout-header">
-				<template #title>
-					{{ projectName }}
-				</template>
-			</ResourceListHeader>
 			<slot name="header" />
 		</template>
 		<div v-if="loading" class="resource-list-loading">
@@ -393,7 +371,7 @@ const projectName = computed(() => {
 					</n8n-action-box>
 				</slot>
 			</div>
-			<PageViewLayoutList v-else :overflow="type !== 'list'">
+			<PageViewLayoutList v-else>
 				<template #header>
 					<div :class="$style['filters-row']">
 						<div :class="$style.filters">
@@ -435,16 +413,7 @@ const projectName = computed(() => {
 								</n8n-select>
 							</div>
 						</div>
-						<slot name="add-button" :disabled="disabled">
-							<n8n-button
-								size="large"
-								:disabled="disabled"
-								data-test-id="resources-list-add"
-								@click="onAddButtonClick"
-							>
-								{{ i18n.baseText(`${resourceKey}.add` as BaseTextKey) }}
-							</n8n-button>
-						</slot>
+						<slot name="add-button"></slot>
 					</div>
 
 					<slot name="callout"></slot>
@@ -512,6 +481,7 @@ const projectName = computed(() => {
 	flex-direction: row;
 	align-items: center;
 	justify-content: space-between;
+	width: 100%;
 }
 
 .filters {
@@ -520,10 +490,24 @@ const projectName = computed(() => {
 	grid-auto-columns: max-content;
 	gap: var(--spacing-2xs);
 	align-items: center;
+	width: 100%;
+
+	@include mixins.breakpoint('xs-only') {
+		grid-template-columns: 1fr auto;
+		grid-auto-flow: row;
+
+		> *:last-child {
+			grid-column: auto;
+		}
+	}
 }
 
 .search {
 	max-width: 240px;
+
+	@include mixins.breakpoint('sm-and-down') {
+		max-width: 100%;
+	}
 }
 
 .listWrapper {
@@ -534,6 +518,10 @@ const projectName = computed(() => {
 
 .sort-and-filter {
 	white-space: nowrap;
+
+	@include mixins.breakpoint('sm-and-down') {
+		width: 100%;
+	}
 }
 
 .datatable {
