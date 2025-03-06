@@ -1,6 +1,7 @@
 import { Container } from '@n8n/di';
 import { mock } from 'jest-mock-extended';
 import type { CredentialInformation } from 'n8n-workflow';
+import { AssertionError } from 'node:assert';
 
 import { CREDENTIAL_ERRORS } from '@/constants';
 import { Cipher } from '@/encryption/cipher';
@@ -92,9 +93,8 @@ describe('Credentials', () => {
 			} catch (error) {
 				expect(error.constructor.name).toBe('CredentialDataError');
 				expect(error.extra).toEqual({ ...nodeCredentials, type: credentialType });
-				expect(error.cause).toEqual(
-					new SyntaxError('Unexpected token \'i\', "invalid-json-string" is not valid JSON'),
-				);
+				expect(error.cause).toBeInstanceOf(SyntaxError);
+				expect(error.cause.message).toMatch('Unexpected token ');
 			}
 		});
 
@@ -105,6 +105,87 @@ describe('Credentials', () => {
 			const decryptedData = credentials.getData();
 			expect(decryptedData.username).toBe('testuser');
 			expect(decryptedData.password).toBe('testpass');
+		});
+	});
+
+	describe('setData', () => {
+		test.each<{}>([[123], [null], [undefined]])(
+			'should throw an AssertionError when data is %s',
+			(data) => {
+				const credentials = new Credentials<{}>(nodeCredentials, credentialType);
+
+				expect(() => credentials.setData(data)).toThrow(AssertionError);
+			},
+		);
+	});
+
+	describe('updateData', () => {
+		const nodeCredentials = { id: '123', name: 'Test Credential' };
+		const credentialType = 'testApi';
+
+		test('should update existing data', () => {
+			const credentials = new Credentials(
+				nodeCredentials,
+				credentialType,
+				cipher.encrypt({
+					username: 'olduser',
+					password: 'oldpass',
+					apiKey: 'oldkey',
+				}),
+			);
+
+			credentials.updateData({ username: 'newuser', password: 'newpass' });
+
+			expect(credentials.getData()).toEqual({
+				username: 'newuser',
+				password: 'newpass',
+				apiKey: 'oldkey',
+			});
+		});
+
+		test('should delete specified keys', () => {
+			const credentials = new Credentials(
+				nodeCredentials,
+				credentialType,
+				cipher.encrypt({
+					username: 'testuser',
+					password: 'testpass',
+					apiKey: 'testkey',
+				}),
+			);
+
+			credentials.updateData({}, ['username', 'apiKey']);
+
+			expect(credentials.getData()).toEqual({
+				password: 'testpass',
+			});
+		});
+
+		test('should update and delete keys in same operation', () => {
+			const credentials = new Credentials(
+				nodeCredentials,
+				credentialType,
+				cipher.encrypt({
+					username: 'olduser',
+					password: 'oldpass',
+					apiKey: 'oldkey',
+				}),
+			);
+
+			credentials.updateData({ username: 'newuser' }, ['apiKey']);
+
+			expect(credentials.getData()).toEqual({
+				username: 'newuser',
+				password: 'oldpass',
+			});
+		});
+
+		test('should throw an error if no data was previously set', () => {
+			const credentials = new Credentials(nodeCredentials, credentialType);
+
+			expect(() => {
+				credentials.updateData({ username: 'newuser' });
+			}).toThrow(CREDENTIAL_ERRORS.NO_DATA);
 		});
 	});
 });

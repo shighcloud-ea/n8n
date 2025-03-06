@@ -31,12 +31,12 @@ import type {
 	IWorkflowExecuteAdditionalData,
 	WorkflowTestData,
 	RelatedExecution,
+	IExecuteFunctions,
 } from 'n8n-workflow';
 import {
 	ApplicationError,
 	createDeferredPromise,
 	NodeConnectionType,
-	NodeExecutionOutput,
 	NodeHelpers,
 	Workflow,
 } from 'n8n-workflow';
@@ -44,12 +44,17 @@ import {
 import * as Helpers from '@test/helpers';
 import { legacyWorkflowExecuteTests, v1WorkflowExecuteTests } from '@test/helpers/constants';
 
+import type { ExecutionLifecycleHooks } from '../execution-lifecycle-hooks';
 import { DirectedGraph } from '../partial-execution-utils';
 import * as partialExecutionUtils from '../partial-execution-utils';
 import { createNodeData, toITaskData } from '../partial-execution-utils/__tests__/helpers';
 import { WorkflowExecute } from '../workflow-execute';
 
 const nodeTypes = Helpers.NodeTypes();
+
+beforeEach(() => {
+	jest.resetAllMocks();
+});
 
 describe('WorkflowExecute', () => {
 	describe('v0 execution order', () => {
@@ -243,18 +248,6 @@ describe('WorkflowExecute', () => {
 				expect(result.data.executionData!.nodeExecutionStack).toEqual([]);
 			});
 		}
-	});
-
-	test('WorkflowExecute, NodeExecutionOutput type test', () => {
-		//TODO Add more tests here when execution hints are added to some node types
-		const nodeExecutionOutput = new NodeExecutionOutput(
-			[[{ json: { data: 123 } }]],
-			[{ message: 'TEXT HINT' }],
-		);
-
-		expect(nodeExecutionOutput).toBeInstanceOf(NodeExecutionOutput);
-		expect(nodeExecutionOutput[0][0].json.data).toEqual(123);
-		expect(nodeExecutionOutput.getHints()[0].message).toEqual('TEXT HINT');
 	});
 
 	describe('runPartialWorkflow2', () => {
@@ -466,6 +459,56 @@ describe('WorkflowExecute', () => {
 				new Set([node1]),
 			);
 		});
+
+		//                 ►►
+		//                ┌──────┐
+		//                │orphan│
+		//                └──────┘
+		//  ┌───────┐     ┌───────────┐
+		//  │trigger├────►│destination│
+		//  └───────┘     └───────────┘
+		test('works with a single node', async () => {
+			// ARRANGE
+			const waitPromise = createDeferredPromise<IRun>();
+			const nodeExecutionOrder: string[] = [];
+			const additionalData = Helpers.WorkflowExecuteAdditionalData(waitPromise, nodeExecutionOrder);
+			const workflowExecute = new WorkflowExecute(additionalData, 'manual');
+
+			const trigger = createNodeData({ name: 'trigger' });
+			const destination = createNodeData({ name: 'destination' });
+			const orphan = createNodeData({ name: 'orphan' });
+
+			const workflow = new DirectedGraph()
+				.addNodes(trigger, destination, orphan)
+				.addConnections({ from: trigger, to: destination })
+				.toWorkflow({ name: '', active: false, nodeTypes });
+
+			const pinData: IPinData = {};
+			const runData: IRunData = {
+				[trigger.name]: [toITaskData([{ data: { value: 1 } }])],
+				[destination.name]: [toITaskData([{ data: { nodeName: destination.name } }])],
+			};
+			const dirtyNodeNames: string[] = [];
+
+			const processRunExecutionDataSpy = jest
+				.spyOn(workflowExecute, 'processRunExecutionData')
+				.mockImplementationOnce(jest.fn());
+
+			// ACT
+			await workflowExecute.runPartialWorkflow2(
+				workflow,
+				runData,
+				pinData,
+				dirtyNodeNames,
+				orphan.name,
+			);
+
+			// ASSERT
+			expect(processRunExecutionDataSpy).toHaveBeenCalledTimes(1);
+			expect(processRunExecutionDataSpy).toHaveBeenCalledWith(
+				new DirectedGraph().addNode(orphan).toWorkflow({ ...workflow }),
+			);
+		});
 	});
 
 	describe('checkReadyForExecution', () => {
@@ -476,18 +519,19 @@ describe('WorkflowExecute', () => {
 		const nodeParamIssuesSpy = jest.spyOn(NodeHelpers, 'getNodeParametersIssues');
 
 		const nodeTypes = mock<INodeTypes>();
-		nodeTypes.getByNameAndVersion.mockImplementation((type) => {
-			// TODO: getByNameAndVersion signature needs to be updated to allow returning undefined
-			if (type === 'unknownNode') return undefined as unknown as INodeType;
-			return mock<INodeType>({
-				description: {
-					properties: [],
-				},
+
+		beforeEach(() => {
+			nodeTypes.getByNameAndVersion.mockImplementation((type) => {
+				// TODO: getByNameAndVersion signature needs to be updated to allow returning undefined
+				if (type === 'unknownNode') return undefined as unknown as INodeType;
+				return mock<INodeType>({
+					description: {
+						properties: [],
+					},
+				});
 			});
 		});
 		const workflowExecute = new WorkflowExecute(mock(), 'manual');
-
-		beforeEach(() => jest.clearAllMocks());
 
 		it('should return null if there are no nodes', () => {
 			const workflow = new Workflow({
@@ -573,7 +617,9 @@ describe('WorkflowExecute', () => {
 			},
 		});
 
-		nodeTypes.getByNameAndVersion.mockReturnValue(triggerNodeType);
+		beforeEach(() => {
+			nodeTypes.getByNameAndVersion.mockReturnValue(triggerNodeType);
+		});
 
 		const workflow = new Workflow({
 			nodeTypes,
@@ -1211,6 +1257,7 @@ describe('WorkflowExecute', () => {
 
 		let runExecutionData: IRunExecutionData;
 		let workflowExecute: WorkflowExecute;
+		let additionalData: IWorkflowExecuteAdditionalData;
 
 		beforeEach(() => {
 			runExecutionData = {
@@ -1224,9 +1271,12 @@ describe('WorkflowExecute', () => {
 					waitingExecutionSource: null,
 				},
 			};
-			workflowExecute = new WorkflowExecute(mock(), 'manual', runExecutionData);
+			additionalData = mock();
+			additionalData.hooks = mock<ExecutionLifecycleHooks>();
 
-			jest.spyOn(workflowExecute, 'executeHook').mockResolvedValue(undefined);
+			workflowExecute = new WorkflowExecute(additionalData, 'manual', runExecutionData);
+
+			jest.spyOn(additionalData.hooks, 'runHook').mockResolvedValue(undefined);
 			jest.spyOn(workflowExecute, 'moveNodeMetadata').mockImplementation();
 		});
 
@@ -1294,7 +1344,7 @@ describe('WorkflowExecute', () => {
 			// Verify static data handling
 			expect(result).toBeDefined();
 			expect(workflowExecute.moveNodeMetadata).toHaveBeenCalled();
-			expect(workflowExecute.executeHook).toHaveBeenCalledWith('workflowExecuteAfter', [
+			expect(additionalData.hooks?.runHook).toHaveBeenCalledWith('workflowExecuteAfter', [
 				result,
 				workflow.staticData,
 			]);
@@ -1359,6 +1409,201 @@ describe('WorkflowExecute', () => {
 
 			expect(result?.[0][0].pairedItem).toEqual({ item: 0 });
 			expect(result?.[1][0].pairedItem).toEqual({ item: 0 });
+		});
+	});
+
+	describe('ensureInputData', () => {
+		const node: INode = {
+			id: '1',
+			name: 'TestNode',
+			type: 'test.set',
+			typeVersion: 1,
+			position: [0, 0],
+			parameters: {},
+		};
+		const parentNode: INode = {
+			id: '2',
+			name: 'ParentNode',
+			type: 'test.set',
+			typeVersion: 1,
+			position: [0, 0],
+			parameters: {},
+		};
+		const runExecutionData = mock<IRunExecutionData>({
+			executionData: {
+				nodeExecutionStack: [],
+			},
+		});
+		const workflow = new Workflow({
+			id: 'test',
+			nodes: [],
+			connections: {},
+			active: false,
+			nodeTypes: mock(),
+		});
+
+		let executionData: IExecuteData;
+		let workflowExecute: WorkflowExecute;
+		beforeEach(() => {
+			executionData = {
+				node,
+				data: {},
+				source: null,
+			};
+			workflowExecute = new WorkflowExecute(mock(), 'manual', runExecutionData);
+			jest.resetAllMocks();
+		});
+
+		test('should return true when node has no input connections', () => {
+			workflow.nodes = {};
+			workflow.connectionsByDestinationNode = {};
+
+			const hasInputData = workflowExecute.ensureInputData(workflow, node, executionData);
+
+			expect(hasInputData).toBe(true);
+		});
+
+		test('should return false when execution data does not have main connection', () => {
+			workflow.nodes = {
+				[node.name]: node,
+				[parentNode.name]: parentNode,
+			};
+
+			workflow.connectionsByDestinationNode = {
+				[node.name]: {
+					main: [[{ node: parentNode.name, type: NodeConnectionType.Main, index: 0 }]],
+				},
+			};
+
+			const hasInputData = workflowExecute.ensureInputData(workflow, node, executionData);
+
+			expect(hasInputData).toBe(false);
+			expect(runExecutionData.executionData?.nodeExecutionStack).toContain(executionData);
+		});
+
+		test('should return true when input data is available for force input node execution', () => {
+			workflow.nodes = {
+				[node.name]: node,
+				[parentNode.name]: parentNode,
+			};
+
+			workflow.connectionsByDestinationNode = {
+				[node.name]: {
+					main: [[{ node: parentNode.name, type: NodeConnectionType.Main, index: 0 }]],
+				},
+			};
+
+			executionData.data = { main: [[{ json: { test: 'data' } }]] };
+
+			const hasInputData = workflowExecute.ensureInputData(workflow, node, executionData);
+
+			expect(hasInputData).toBe(true);
+		});
+
+		test('should return false when input data is not available for force input node execution', () => {
+			workflow.nodes = {
+				[node.name]: node,
+				[parentNode.name]: parentNode,
+			};
+
+			workflow.connectionsByDestinationNode = {
+				[node.name]: {
+					main: [[{ node: parentNode.name, type: NodeConnectionType.Main, index: 0 }]],
+				},
+			};
+
+			executionData.data = { main: [null] };
+
+			const hasInputData = workflowExecute.ensureInputData(workflow, node, executionData);
+
+			expect(hasInputData).toBe(false);
+			expect(runExecutionData.executionData?.nodeExecutionStack).toContain(executionData);
+		});
+	});
+
+	describe('customOperations', () => {
+		const nodeTypes = mock<INodeTypes>();
+		const testNode = mock<INode>();
+
+		const workflow = new Workflow({
+			nodeTypes,
+			nodes: [testNode],
+			connections: {},
+			active: false,
+		});
+
+		const executionData = mock<IExecuteData>({
+			node: { parameters: { resource: 'test', operation: 'test' } },
+			data: { main: [[{ json: {} }]] },
+		});
+		const runExecutionData = mock<IRunExecutionData>();
+		const additionalData = mock<IWorkflowExecuteAdditionalData>();
+		const workflowExecute = new WorkflowExecute(additionalData, 'manual');
+
+		test('should execute customOperations', async () => {
+			const nodeType = mock<INodeType>({
+				description: {
+					properties: [],
+				},
+				execute: undefined,
+				customOperations: {
+					test: {
+						async test(this: IExecuteFunctions) {
+							return [[{ json: { customOperationsRun: true } }]];
+						},
+					},
+				},
+			});
+
+			nodeTypes.getByNameAndVersion.mockReturnValue(nodeType);
+
+			const runPromise = workflowExecute.runNode(
+				workflow,
+				executionData,
+				runExecutionData,
+				0,
+				additionalData,
+				'manual',
+			);
+
+			const result = await runPromise;
+
+			expect(result).toEqual({ data: [[{ json: { customOperationsRun: true } }]], hints: [] });
+		});
+
+		test('should throw error if customOperation and execute both defined', async () => {
+			const nodeType = mock<INodeType>({
+				description: {
+					properties: [],
+				},
+				async execute(this: IExecuteFunctions) {
+					return [];
+				},
+				customOperations: {
+					test: {
+						async test(this: IExecuteFunctions) {
+							return [];
+						},
+					},
+				},
+			});
+
+			nodeTypes.getByNameAndVersion.mockReturnValue(nodeType);
+
+			try {
+				await workflowExecute.runNode(
+					workflow,
+					executionData,
+					runExecutionData,
+					0,
+					additionalData,
+					'manual',
+				);
+			} catch (error) {
+				expect(error.message).toBe(
+					'Node type cannot have both customOperations and execute defined',
+				);
+			}
 		});
 	});
 });
